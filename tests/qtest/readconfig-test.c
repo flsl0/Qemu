@@ -86,8 +86,8 @@ static void test_x86_memdev(void)
     qtest_quit(qts);
 }
 
-
-#ifdef CONFIG_SPICE
+/* FIXME: The test is currently broken on FreeBSD */
+#if defined(CONFIG_SPICE) && !defined(__FreeBSD__)
 static void test_spice_resp(QObject *res)
 {
     Visitor *v;
@@ -207,9 +207,12 @@ int main(int argc, char *argv[])
     if (g_str_equal(arch, "i386") ||
         g_str_equal(arch, "x86_64")) {
         qtest_add_func("readconfig/x86/memdev", test_x86_memdev);
-        qtest_add_func("readconfig/x86/ich9-ehci-uhci", test_docs_config_ich9);
+        if (qtest_has_device("ich9-usb-ehci1") &&
+            qtest_has_device("ich9-usb-uhci1")) {
+            qtest_add_func("readconfig/x86/ich9-ehci-uhci", test_docs_config_ich9);
+        }
     }
-#ifdef CONFIG_SPICE
+#if defined(CONFIG_SPICE) && !defined(__FreeBSD__)
     qtest_add_func("readconfig/spice", test_spice);
 #endif
 

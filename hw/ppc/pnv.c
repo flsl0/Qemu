@@ -799,7 +799,8 @@ static void pnv_init(MachineState *machine)
     DeviceState *dev;
 
     if (kvm_enabled()) {
-        error_report("The powernv machine does not work with KVM acceleration");
+        error_report("machine %s does not support the KVM accelerator",
+                     mc->name);
         exit(EXIT_FAILURE);
     }
 
@@ -2171,7 +2172,7 @@ static void pnv_machine_power9_class_init(ObjectClass *oc, void *data)
     };
 
     mc->desc = "IBM PowerNV (Non-Virtualized) POWER9";
-    mc->default_cpu_type = POWERPC_CPU_TYPE_NAME("power9_v2.0");
+    mc->default_cpu_type = POWERPC_CPU_TYPE_NAME("power9_v2.2");
     compat_props_add(mc->compat_props, phb_compat, G_N_ELEMENTS(phb_compat));
 
     xfc->match_nvt = pnv_match_nvt;

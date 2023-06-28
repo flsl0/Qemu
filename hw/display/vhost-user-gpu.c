@@ -364,11 +364,11 @@ vhost_user_gpu_gl_flushed(VirtIOGPUBase *b)
     VhostUserGPU *g = VHOST_USER_GPU(b);
 
     if (g->backend_blocked) {
-        vhost_user_gpu_unblock(VHOST_USER_GPU(g));
+        vhost_user_gpu_unblock(g);
         g->backend_blocked = false;
     }
 
-    vhost_user_gpu_update_blocked(VHOST_USER_GPU(g), false);
+    vhost_user_gpu_update_blocked(g, false);
 }
 
 static bool
@@ -452,7 +452,7 @@ vhost_user_gpu_set_config(VirtIODevice *vdev,
 
     ret = vhost_dev_set_config(&g->vhost->dev, config_data,
                                0, sizeof(struct virtio_gpu_config),
-                               VHOST_SET_CONFIG_TYPE_MASTER);
+                               VHOST_SET_CONFIG_TYPE_FRONTEND);
     if (ret) {
         error_report("vhost-user-gpu: set device config space failed");
         return;
