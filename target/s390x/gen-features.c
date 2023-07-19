@@ -904,11 +904,10 @@ static void print_feature_defs(void)
     uint64_t base_feat[S390_FEAT_MAX / 64 + 1] = {};
     uint64_t default_feat[S390_FEAT_MAX / 64 + 1] = {};
     uint64_t full_feat[S390_FEAT_MAX / 64 + 1] = {};
-    int i, j;
 
     printf("\n/* CPU model feature list data */\n");
 
-    for (i = 0; i < ARRAY_SIZE(CpuFeatDef); i++) {
+    for (size_t i = 0; i < ARRAY_SIZE(CpuFeatDef); i++) {
         /* With gen15 CSSKE and BPB are deprecated */
         if (strcmp(CpuFeatDef[i].name, "S390_FEAT_LIST_GEN15_GA1") == 0) {
             clear_bit(base_feat, S390_FEAT_CONDITIONAL_SSKE);
@@ -924,7 +923,7 @@ static void print_feature_defs(void)
         set_bits(full_feat, CpuFeatDef[i].full_bits);
 
         printf("#define %s_BASE\t", CpuFeatDef[i].name);
-        for (j = 0; j < ARRAY_SIZE(base_feat); j++) {
+        for (size_t j = 0; j < ARRAY_SIZE(base_feat); j++) {
             printf("0x%016"PRIx64"ULL", base_feat[j]);
             if (j < ARRAY_SIZE(base_feat) - 1) {
                 printf(",");
@@ -933,7 +932,7 @@ static void print_feature_defs(void)
             }
         }
         printf("#define %s_DEFAULT\t", CpuFeatDef[i].name);
-        for (j = 0; j < ARRAY_SIZE(default_feat); j++) {
+        for (size_t j = 0; j < ARRAY_SIZE(default_feat); j++) {
             printf("0x%016"PRIx64"ULL", default_feat[j]);
             if (j < ARRAY_SIZE(default_feat) - 1) {
                 printf(",");
@@ -942,7 +941,7 @@ static void print_feature_defs(void)
             }
         }
         printf("#define %s_FULL\t\t", CpuFeatDef[i].name);
-        for (j = 0; j < ARRAY_SIZE(full_feat); j++) {
+        for (size_t j = 0; j < ARRAY_SIZE(full_feat); j++) {
             printf("0x%016"PRIx64"ULL", full_feat[j]);
             if (j < ARRAY_SIZE(full_feat) - 1) {
                 printf(",");
@@ -956,16 +955,15 @@ static void print_feature_defs(void)
 static void print_qemu_feature_defs(void)
 {
     uint64_t feat[S390_FEAT_MAX / 64 + 1] = {};
-    int i, j;
 
     printf("\n/* QEMU (CPU model) feature list data */\n");
 
     /* for now we assume that we only add new features */
-    for (i = 0; i < ARRAY_SIZE(QemuFeatDef); i++) {
+    for (size_t i = 0; i < ARRAY_SIZE(QemuFeatDef); i++) {
         set_bits(feat, QemuFeatDef[i].bits);
 
         printf("#define %s\t", QemuFeatDef[i].name);
-        for (j = 0; j < ARRAY_SIZE(feat); j++) {
+        for (size_t j = 0; j < ARRAY_SIZE(feat); j++) {
             printf("0x%016"PRIx64"ULL", feat[j]);
             if (j < ARRAY_SIZE(feat) - 1) {
                 printf(",");
@@ -978,16 +976,14 @@ static void print_qemu_feature_defs(void)
 
 static void print_feature_group_defs(void)
 {
-    int i, j;
-
     printf("\n/* CPU feature group list data */\n");
 
-    for (i = 0; i < ARRAY_SIZE(FeatGroupDef); i++) {
+    for (size_t i = 0; i < ARRAY_SIZE(FeatGroupDef); i++) {
         uint64_t feat[S390_FEAT_MAX / 64 + 1] = {};
 
         set_bits(feat, FeatGroupDef[i].bits);
         printf("#define %s\t", FeatGroupDef[i].name);
-        for (j = 0; j < ARRAY_SIZE(feat); j++) {
+        for (size_t j = 0; j < ARRAY_SIZE(feat); j++) {
             printf("0x%016"PRIx64"ULL", feat[j]);
             if (j < ARRAY_SIZE(feat) - 1) {
                 printf(",");
@@ -1000,18 +996,16 @@ static void print_feature_group_defs(void)
 
 static void print_feature_group_enum_type(void)
 {
-    int i;
-
     printf("\n/* CPU feature group enum type */\n"
            "typedef enum {\n");
-    for (i = 0; i < ARRAY_SIZE(FeatGroupDef); i++) {
+    for (size_t i = 0; i < ARRAY_SIZE(FeatGroupDef); i++) {
         printf("\t%s,\n", FeatGroupDef[i].enum_name);
     }
     printf("\tS390_FEAT_GROUP_MAX,\n"
            "} S390FeatGroup;\n");
 }
 
-int main(int argc, char *argv[])
+int main(void)
 {
     printf("/*\n"
            " * AUTOMATICALLY GENERATED, DO NOT MODIFY HERE, EDIT\n"
