@@ -177,6 +177,7 @@ fail:
 }
 #endif /* WIN32 */
 
+#if defined(CONFIG_GBM) || defined(WIN32)
 static void dbus_update_gl_cb(GObject *source_object,
                               GAsyncResult *res,
                               gpointer user_data)
@@ -203,11 +204,14 @@ static void dbus_update_gl_cb(GObject *source_object,
     graphic_hw_gl_block(ddl->dcl.con, false);
     g_object_unref(ddl);
 }
+#endif
 
 static void dbus_call_update_gl(DisplayChangeListener *dcl,
                                 int x, int y, int w, int h)
 {
+#if defined(CONFIG_GBM) || defined(WIN32)
     DBusDisplayListener *ddl = container_of(dcl, DBusDisplayListener, dcl);
+#endif
 
     trace_dbus_update_gl(x, y, w, h);
 
@@ -411,13 +415,13 @@ static void dbus_scanout_texture(DisplayChangeListener *dcl,
                                backing_width, backing_height, x, y, w, h);
 #ifdef CONFIG_GBM
     QemuDmaBuf dmabuf = {
-        .width = backing_width,
-        .height = backing_height,
+        .width = w,
+        .height = h,
         .y0_top = backing_y_0_top,
         .x = x,
         .y = y,
-        .scanout_width = w,
-        .scanout_height = h,
+        .backing_width = backing_width,
+        .backing_height = backing_height,
     };
 
     assert(tex_id);

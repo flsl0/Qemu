@@ -555,8 +555,9 @@ int coroutine_fn bdrv_co_create(BlockDriver *drv, const char *filename,
  * On success, return @blk's actual length.
  * Otherwise, return -errno.
  */
-static int64_t create_file_fallback_truncate(BlockBackend *blk,
-                                             int64_t minimum_size, Error **errp)
+static int64_t coroutine_fn GRAPH_UNLOCKED
+create_file_fallback_truncate(BlockBackend *blk, int64_t minimum_size,
+                              Error **errp)
 {
     Error *local_err = NULL;
     int64_t size;
@@ -564,14 +565,14 @@ static int64_t create_file_fallback_truncate(BlockBackend *blk,
 
     GLOBAL_STATE_CODE();
 
-    ret = blk_truncate(blk, minimum_size, false, PREALLOC_MODE_OFF, 0,
-                       &local_err);
+    ret = blk_co_truncate(blk, minimum_size, false, PREALLOC_MODE_OFF, 0,
+                          &local_err);
     if (ret < 0 && ret != -ENOTSUP) {
         error_propagate(errp, local_err);
         return ret;
     }
 
-    size = blk_getlength(blk);
+    size = blk_co_getlength(blk);
     if (size < 0) {
         error_free(local_err);
         error_setg_errno(errp, -size,
@@ -2855,7 +2856,7 @@ uint64_t bdrv_qapi_perm_to_blk_perm(BlockPermission qapi_perm)
  * Replaces the node that a BdrvChild points to without updating permissions.
  *
  * If @new_bs is non-NULL, the parent of @child must already be drained through
- * @child.
+ * @child and the caller must hold the AioContext lock for @new_bs.
  */
 static void bdrv_replace_child_noperm(BdrvChild *child,
                                       BlockDriverState *new_bs)
@@ -2894,7 +2895,7 @@ static void bdrv_replace_child_noperm(BdrvChild *child,
     }
 
     /* TODO Pull this up into the callers to avoid polling here */
-    bdrv_graph_wrlock();
+    bdrv_graph_wrlock(new_bs);
     if (old_bs) {
         if (child->klass->detach) {
             child->klass->detach(child);
@@ -2990,6 +2991,10 @@ static TransactionActionDrv bdrv_attach_child_common_drv = {
  * Function doesn't update permissions, caller is responsible for this.
  *
  * Returns new created child.
+ *
+ * The caller must hold the AioContext lock for @child_bs. Both @parent_bs and
+ * @child_bs can move to a different AioContext in this function. Callers must
+ * make sure that their AioContext locking is still correct after this.
  */
 static BdrvChild *bdrv_attach_child_common(BlockDriverState *child_bs,
                                            const char *child_name,
@@ -3000,7 +3005,7 @@ static BdrvChild *bdrv_attach_child_common(BlockDriverState *child_bs,
                                            Transaction *tran, Error **errp)
 {
     BdrvChild *new_child;
-    AioContext *parent_ctx;
+    AioContext *parent_ctx, *new_child_ctx;
     AioContext *child_ctx = bdrv_get_aio_context(child_bs);
 
     assert(child_class->get_parent_desc);
@@ -3051,6 +3056,12 @@ static BdrvChild *bdrv_attach_child_common(BlockDriverState *child_bs,
         }
     }
 
+    new_child_ctx = bdrv_get_aio_context(child_bs);
+    if (new_child_ctx != child_ctx) {
+        aio_context_release(child_ctx);
+        aio_context_acquire(new_child_ctx);
+    }
+
     bdrv_ref(child_bs);
     /*
      * Let every new BdrvChild start with a drained parent. Inserting the child
@@ -3080,11 +3091,20 @@ static BdrvChild *bdrv_attach_child_common(BlockDriverState *child_bs,
     };
     tran_add(tran, &bdrv_attach_child_common_drv, s);
 
+    if (new_child_ctx != child_ctx) {
+        aio_context_release(new_child_ctx);
+        aio_context_acquire(child_ctx);
+    }
+
     return new_child;
 }
 
 /*
  * Function doesn't update permissions, caller is responsible for this.
+ *
+ * The caller must hold the AioContext lock for @child_bs. Both @parent_bs and
+ * @child_bs can move to a different AioContext in this function. Callers must
+ * make sure that their AioContext locking is still correct after this.
  */
 static BdrvChild *bdrv_attach_child_noperm(BlockDriverState *parent_bs,
                                            BlockDriverState *child_bs,
@@ -3348,6 +3368,10 @@ static BdrvChildRole bdrv_backing_role(BlockDriverState *bs)
  * callers which don't need their own reference any more must call bdrv_unref().
  *
  * Function doesn't update permissions, caller is responsible for this.
+ *
+ * The caller must hold the AioContext lock for @child_bs. Both @parent_bs and
+ * @child_bs can move to a different AioContext in this function. Callers must
+ * make sure that their AioContext locking is still correct after this.
  */
 static int bdrv_set_file_or_backing_noperm(BlockDriverState *parent_bs,
                                            BlockDriverState *child_bs,
@@ -3436,6 +3460,11 @@ out:
     return 0;
 }
 
+/*
+ * The caller must hold the AioContext lock for @backing_hd. Both @bs and
+ * @backing_hd can move to a different AioContext in this function. Callers must
+ * make sure that their AioContext locking is still correct after this.
+ */
 static int bdrv_set_backing_noperm(BlockDriverState *bs,
                                    BlockDriverState *backing_hd,
                                    Transaction *tran, Error **errp)
@@ -3499,6 +3528,7 @@ int bdrv_open_backing_file(BlockDriverState *bs, QDict *parent_options,
     int ret = 0;
     bool implicit_backing = false;
     BlockDriverState *backing_hd;
+    AioContext *backing_hd_ctx;
     QDict *options;
     QDict *tmp_parent_options = NULL;
     Error *local_err = NULL;
@@ -3583,8 +3613,12 @@ int bdrv_open_backing_file(BlockDriverState *bs, QDict *parent_options,
 
     /* Hook up the backing file link; drop our reference, bs owns the
      * backing_hd reference now */
+    backing_hd_ctx = bdrv_get_aio_context(backing_hd);
+    aio_context_acquire(backing_hd_ctx);
     ret = bdrv_set_backing_hd(bs, backing_hd, errp);
     bdrv_unref(backing_hd);
+    aio_context_release(backing_hd_ctx);
+
     if (ret < 0) {
         goto free_exit;
     }
@@ -3655,6 +3689,7 @@ done:
  *
  * The BlockdevRef will be removed from the options QDict.
  *
+ * The caller must hold the lock of the main AioContext and no other AioContext.
  * @parent can move to a different AioContext in this function. Callers must
  * make sure that their AioContext locking is still correct after this.
  */
@@ -3666,6 +3701,8 @@ BdrvChild *bdrv_open_child(const char *filename,
                            bool allow_none, Error **errp)
 {
     BlockDriverState *bs;
+    BdrvChild *child;
+    AioContext *ctx;
 
     GLOBAL_STATE_CODE();
 
@@ -3675,13 +3712,19 @@ BdrvChild *bdrv_open_child(const char *filename,
         return NULL;
     }
 
-    return bdrv_attach_child(parent, bs, bdref_key, child_class, child_role,
-                             errp);
+    ctx = bdrv_get_aio_context(bs);
+    aio_context_acquire(ctx);
+    child = bdrv_attach_child(parent, bs, bdref_key, child_class, child_role,
+                              errp);
+    aio_context_release(ctx);
+
+    return child;
 }
 
 /*
  * Wrapper on bdrv_open_child() for most popular case: open primary child of bs.
  *
+ * The caller must hold the lock of the main AioContext and no other AioContext.
  * @parent can move to a different AioContext in this function. Callers must
  * make sure that their AioContext locking is still correct after this.
  */
@@ -3758,6 +3801,7 @@ static BlockDriverState *bdrv_append_temp_snapshot(BlockDriverState *bs,
     int64_t total_size;
     QemuOpts *opts = NULL;
     BlockDriverState *bs_snapshot = NULL;
+    AioContext *ctx = bdrv_get_aio_context(bs);
     int ret;
 
     GLOBAL_STATE_CODE();
@@ -3766,7 +3810,10 @@ static BlockDriverState *bdrv_append_temp_snapshot(BlockDriverState *bs,
        instead of opening 'filename' directly */
 
     /* Get the required size from the image */
+    aio_context_acquire(ctx);
     total_size = bdrv_getlength(bs);
+    aio_context_release(ctx);
+
     if (total_size < 0) {
         error_setg_errno(errp, -total_size, "Could not get image size");
         goto out;
@@ -3800,7 +3847,10 @@ static BlockDriverState *bdrv_append_temp_snapshot(BlockDriverState *bs,
         goto out;
     }
 
+    aio_context_acquire(ctx);
     ret = bdrv_append(bs_snapshot, bs, errp);
+    aio_context_release(ctx);
+
     if (ret < 0) {
         bs_snapshot = NULL;
         goto out;
@@ -3844,6 +3894,7 @@ bdrv_open_inherit(const char *filename, const char *reference, QDict *options,
     Error *local_err = NULL;
     QDict *snapshot_options = NULL;
     int snapshot_flags = 0;
+    AioContext *ctx = qemu_get_aio_context();
 
     assert(!child_class || !flags);
     assert(!child_class == !parent);
@@ -3981,9 +4032,13 @@ bdrv_open_inherit(const char *filename, const char *reference, QDict *options,
             /* Not requesting BLK_PERM_CONSISTENT_READ because we're only
              * looking at the header to guess the image format. This works even
              * in cases where a guest would not see a consistent state. */
-            file = blk_new(bdrv_get_aio_context(file_bs), 0, BLK_PERM_ALL);
+            ctx = bdrv_get_aio_context(file_bs);
+            aio_context_acquire(ctx);
+            file = blk_new(ctx, 0, BLK_PERM_ALL);
             blk_insert_bs(file, file_bs, &local_err);
             bdrv_unref(file_bs);
+            aio_context_release(ctx);
+
             if (local_err) {
                 goto fail;
             }
@@ -4029,8 +4084,13 @@ bdrv_open_inherit(const char *filename, const char *reference, QDict *options,
         goto fail;
     }
 
+    /* The AioContext could have changed during bdrv_open_common() */
+    ctx = bdrv_get_aio_context(bs);
+
     if (file) {
+        aio_context_acquire(ctx);
         blk_unref(file);
+        aio_context_release(ctx);
         file = NULL;
     }
 
@@ -4088,13 +4148,16 @@ bdrv_open_inherit(const char *filename, const char *reference, QDict *options,
          * (snapshot_bs); thus, we have to drop the strong reference to bs
          * (which we obtained by calling bdrv_new()). bs will not be deleted,
          * though, because the overlay still has a reference to it. */
+        aio_context_acquire(ctx);
         bdrv_unref(bs);
+        aio_context_release(ctx);
         bs = snapshot_bs;
     }
 
     return bs;
 
 fail:
+    aio_context_acquire(ctx);
     blk_unref(file);
     qobject_unref(snapshot_options);
     qobject_unref(bs->explicit_options);
@@ -4103,11 +4166,14 @@ fail:
     bs->options = NULL;
     bs->explicit_options = NULL;
     bdrv_unref(bs);
+    aio_context_release(ctx);
     error_propagate(errp, local_err);
     return NULL;
 
 close_and_fail:
+    aio_context_acquire(ctx);
     bdrv_unref(bs);
+    aio_context_release(ctx);
     qobject_unref(snapshot_options);
     qobject_unref(options);
     error_propagate(errp, local_err);
@@ -4579,6 +4645,11 @@ int bdrv_reopen_set_read_only(BlockDriverState *bs, bool read_only,
  * backing BlockDriverState (or NULL).
  *
  * Return 0 on success, otherwise return < 0 and set @errp.
+ *
+ * The caller must hold the AioContext lock of @reopen_state->bs.
+ * @reopen_state->bs can move to a different AioContext in this function.
+ * Callers must make sure that their AioContext locking is still correct after
+ * this.
  */
 static int bdrv_reopen_parse_file_or_backing(BDRVReopenState *reopen_state,
                                              bool is_backing, Transaction *tran,
@@ -4591,6 +4662,8 @@ static int bdrv_reopen_parse_file_or_backing(BDRVReopenState *reopen_state,
     const char *child_name = is_backing ? "backing" : "file";
     QObject *value;
     const char *str;
+    AioContext *ctx, *old_ctx;
+    int ret;
 
     GLOBAL_STATE_CODE();
 
@@ -4655,8 +4728,22 @@ static int bdrv_reopen_parse_file_or_backing(BDRVReopenState *reopen_state,
         reopen_state->old_file_bs = old_child_bs;
     }
 
-    return bdrv_set_file_or_backing_noperm(bs, new_child_bs, is_backing,
-                                           tran, errp);
+    old_ctx = bdrv_get_aio_context(bs);
+    ctx = bdrv_get_aio_context(new_child_bs);
+    if (old_ctx != ctx) {
+        aio_context_release(old_ctx);
+        aio_context_acquire(ctx);
+    }
+
+    ret = bdrv_set_file_or_backing_noperm(bs, new_child_bs, is_backing,
+                                          tran, errp);
+
+    if (old_ctx != ctx) {
+        aio_context_release(ctx);
+        aio_context_acquire(old_ctx);
+    }
+
+    return ret;
 }
 
 /*
@@ -4675,6 +4762,7 @@ static int bdrv_reopen_parse_file_or_backing(BDRVReopenState *reopen_state,
  * It is the responsibility of the caller to then call the abort() or
  * commit() for any other BDS that have been left in a prepare() state
  *
+ * The caller must hold the AioContext lock of @reopen_state->bs.
  */
 static int bdrv_reopen_prepare(BDRVReopenState *reopen_state,
                                BlockReopenQueue *queue,

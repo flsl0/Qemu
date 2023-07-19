@@ -12,6 +12,7 @@
 
 #include "qemu/osdep.h"
 #include "vss-common.h"
+#include "vss-debug.h"
 #include "requester.h"
 #include "install.h"
 #include <vswriter.h>
@@ -25,9 +26,11 @@
 
 #define DEFAULT_VSS_BACKUP_TYPE VSS_BT_FULL
 
-#define err_set(e, err, fmt, ...)                                           \
-    ((e)->error_setg_win32_wrapper((e)->errp, __FILE__, __LINE__, __func__, \
-                                   err, fmt, ## __VA_ARGS__))
+#define err_set(e, err, fmt, ...) {                                         \
+    (e)->error_setg_win32_wrapper((e)->errp, __FILE__, __LINE__, __func__,  \
+                                   err, fmt, ## __VA_ARGS__);               \
+    qga_debug(fmt, ## __VA_ARGS__);                                         \
+}
 /* Bad idea, works only when (e)->errp != NULL: */
 #define err_is_set(e) ((e)->errp && *(e)->errp)
 /* To lift this restriction, error_propagate(), like we do in QEMU code */
@@ -54,18 +57,20 @@ static struct QGAVSSContext {
 
 STDAPI requester_init(void)
 {
+    qga_debug_begin;
+
     COMInitializer initializer; /* to call CoInitializeSecurity */
     HRESULT hr = CoInitializeSecurity(
         NULL, -1, NULL, NULL, RPC_C_AUTHN_LEVEL_PKT_PRIVACY,
         RPC_C_IMP_LEVEL_IDENTIFY, NULL, EOAC_NONE, NULL);
     if (FAILED(hr)) {
-        fprintf(stderr, "failed to CoInitializeSecurity (error %lx)\n", hr);
+        qga_debug("failed to CoInitializeSecurity (error %lx)", hr);
         return hr;
     }
 
     hLib = LoadLibraryA("VSSAPI.DLL");
     if (!hLib) {
-        fprintf(stderr, "failed to load VSSAPI.DLL\n");
+        qga_debug("failed to load VSSAPI.DLL");
         return HRESULT_FROM_WIN32(GetLastError());
     }
 
@@ -79,22 +84,25 @@ STDAPI requester_init(void)
 #endif
         );
     if (!pCreateVssBackupComponents) {
-        fprintf(stderr, "failed to get proc address from VSSAPI.DLL\n");
+        qga_debug("failed to get proc address from VSSAPI.DLL");
         return HRESULT_FROM_WIN32(GetLastError());
     }
 
     pVssFreeSnapshotProperties = (t_VssFreeSnapshotProperties)
         GetProcAddress(hLib, "VssFreeSnapshotProperties");
     if (!pVssFreeSnapshotProperties) {
-        fprintf(stderr, "failed to get proc address from VSSAPI.DLL\n");
+        qga_debug("failed to get proc address from VSSAPI.DLL");
         return HRESULT_FROM_WIN32(GetLastError());
     }
 
+    qga_debug_end;
     return S_OK;
 }
 
 static void requester_cleanup(void)
 {
+    qga_debug_begin;
+
     if (vss_ctx.hEventFrozen) {
         CloseHandle(vss_ctx.hEventFrozen);
         vss_ctx.hEventFrozen = NULL;
@@ -116,10 +124,13 @@ static void requester_cleanup(void)
         vss_ctx.pVssbc = NULL;
     }
     vss_ctx.cFrozenVols = 0;
+    qga_debug_end;
 }
 
 STDAPI requester_deinit(void)
 {
+    qga_debug_begin;
+
     requester_cleanup();
 
     pCreateVssBackupComponents = NULL;
@@ -129,11 +140,14 @@ STDAPI requester_deinit(void)
         hLib = NULL;
     }
 
+    qga_debug_end;
     return S_OK;
 }
 
 static HRESULT WaitForAsync(IVssAsync *pAsync)
 {
+    qga_debug_begin;
+
     HRESULT ret, hr;
 
     do {
@@ -149,11 +163,14 @@ static HRESULT WaitForAsync(IVssAsync *pAsync)
         }
     } while (ret == VSS_S_ASYNC_PENDING);
 
+    qga_debug_end;
     return ret;
 }
 
 static void AddComponents(ErrorSet *errset)
 {
+    qga_debug_begin;
+
     unsigned int cWriters, i;
     VSS_ID id, idInstance, idWriter;
     BSTR bstrWriterName = NULL;
@@ -235,17 +252,21 @@ out:
     if (pComponent && info) {
         pComponent->FreeComponentInfo(info);
     }
+    qga_debug_end;
 }
 
 DWORD get_reg_dword_value(HKEY baseKey, LPCSTR subKey, LPCSTR valueName,
                           DWORD defaultData)
 {
+    qga_debug_begin;
+
     DWORD regGetValueError;
     DWORD dwordData;
     DWORD dataSize = sizeof(DWORD);
 
     regGetValueError = RegGetValue(baseKey, subKey, valueName, RRF_RT_DWORD,
                                    NULL, &dwordData, &dataSize);
+    qga_debug_end;
     if (regGetValueError  != ERROR_SUCCESS) {
         return defaultData;
     }
@@ -260,6 +281,8 @@ bool is_valid_vss_backup_type(VSS_BACKUP_TYPE vssBT)
 VSS_BACKUP_TYPE get_vss_backup_type(
     VSS_BACKUP_TYPE defaultVssBT = DEFAULT_VSS_BACKUP_TYPE)
 {
+    qga_debug_begin;
+
     VSS_BACKUP_TYPE vssBackupType;
 
     vssBackupType = static_cast<VSS_BACKUP_TYPE>(
@@ -267,6 +290,7 @@ VSS_BACKUP_TYPE get_vss_backup_type(
                                                 QGA_PROVIDER_REGISTRY_ADDRESS,
                                                 "VssOption",
                                                 defaultVssBT));
+    qga_debug_end;
     if (!is_valid_vss_backup_type(vssBackupType)) {
         return defaultVssBT;
     }
@@ -275,6 +299,8 @@ VSS_BACKUP_TYPE get_vss_backup_type(
 
 void requester_freeze(int *num_vols, void *mountpoints, ErrorSet *errset)
 {
+    qga_debug_begin;
+
     COMPointer<IVssAsync> pAsync;
     HANDLE volume;
     HRESULT hr;
@@ -290,6 +316,7 @@ void requester_freeze(int *num_vols, void *mountpoints, ErrorSet *errset)
 
     if (vss_ctx.pVssbc) { /* already frozen */
         *num_vols = 0;
+        qga_debug("finished, already frozen");
         return;
     }
 
@@ -447,6 +474,7 @@ void requester_freeze(int *num_vols, void *mountpoints, ErrorSet *errset)
         }
     }
 
+    qga_debug("preparing for backup");
     hr = vss_ctx.pVssbc->PrepareForBackup(pAsync.replace());
     if (SUCCEEDED(hr)) {
         hr = WaitForAsync(pAsync);
@@ -470,6 +498,7 @@ void requester_freeze(int *num_vols, void *mountpoints, ErrorSet *errset)
      * CQGAVssProvider::CommitSnapshots will kick vss_ctx.hEventFrozen
      * after the applications and filesystems are frozen.
      */
+    qga_debug("do snapshot set");
     hr = vss_ctx.pVssbc->DoSnapshotSet(&vss_ctx.pAsyncSnapshot);
     if (FAILED(hr)) {
         err_set(errset, hr, "failed to do snapshot set");
@@ -516,6 +545,7 @@ void requester_freeze(int *num_vols, void *mountpoints, ErrorSet *errset)
         *num_vols = vss_ctx.cFrozenVols = num_fixed_drives;
     }
 
+    qga_debug("end successful");
     return;
 
 out:
@@ -526,11 +556,14 @@ out:
 out1:
     requester_cleanup();
     CoUninitialize();
+
+    qga_debug_end;
 }
 
 
 void requester_thaw(int *num_vols, void *mountpints, ErrorSet *errset)
 {
+    qga_debug_begin;
     COMPointer<IVssAsync> pAsync;
 
     if (!vss_ctx.hEventThaw) {
@@ -539,6 +572,8 @@ void requester_thaw(int *num_vols, void *mountpints, ErrorSet *errset)
          * and no volumes must be frozen. We return without an error.
          */
         *num_vols = 0;
+        qga_debug("finished, no volumes were frozen");
+
         return;
     }
 
@@ -595,4 +630,6 @@ void requester_thaw(int *num_vols, void *mountpints, ErrorSet *errset)
 
     CoUninitialize();
     StopService();
+
+    qga_debug_end;
 }
