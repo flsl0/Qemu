@@ -369,7 +369,7 @@ mapping permissions et al by using its 'mapped' security model option.
 Nowadays it would make sense to reimplement the ``proxy`` backend by using
 QEMU's ``vhost`` feature, which would eliminate the high latency costs under
 which the 9p ``proxy`` backend currently suffers. However as of to date nobody
-has indicated plans for such kind of reimplemention unfortunately.
+has indicated plans for such kind of reimplementation unfortunately.
 
 
 Block device options
@@ -451,3 +451,13 @@ both, older and future versions of QEMU.
 The ``blacklist`` config file option has been renamed to ``block-rpcs``
 (to be in sync with the renaming of the corresponding command line
 option).
+
+Migration
+---------
+
+``skipped`` MigrationStats field (since 8.1)
+''''''''''''''''''''''''''''''''''''''''''''
+
+``skipped`` field in Migration stats has been deprecated.  It hasn't
+been used for more than 10 years.
+
