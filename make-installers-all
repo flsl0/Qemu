@@ -3,6 +3,7 @@
 # Needs bash because of ${x/exe/sha} expression.
 
 date=$(date +%Y%m%d)
+year=$(date +%Y)
 
 WEBDIR=/var/www/html
 
@@ -22,6 +23,7 @@ fi
 
 (
   target=x86_64-w64-mingw32
+
   echo Building $target...
   rm -rf /home/stefan/src/qemu/repo.or.cz/qemu/ar7/bin/ndebug/$target
   mkdir -p /home/stefan/src/qemu/repo.or.cz/qemu/ar7/bin/ndebug/$target
@@ -29,13 +31,16 @@ fi
   ../../../configure --cross-prefix=${target}- --disable-guest-agent-msi --disable-werror --enable-strip --extra-cflags="-I/mingw64/include" --extra-ldflags="-L/mingw64/lib"
   make -O -j4
   make -C /home/stefan/src/qemu/repo.or.cz/qemu/ar7/bin/ndebug/$target installer SIGNCODE=signcode
-  mv /home/stefan/src/qemu/repo.or.cz/qemu/ar7/bin/ndebug/$target/qemu-setup-*.exe $WEBDIR/w64/qemu-w64-setup-$date.exe
-)
+  instdir=$WEBDIR/w64/$year
+  mkdir -p $instdir
+  mv -v /home/stefan/src/qemu/repo.or.cz/qemu/ar7/bin/ndebug/$target/qemu-setup-*.exe $instdir/qemu-w64-setup-$date.exe
 
-echo Calculate SHA-512 checksums...
-for exe in $WEBDIR/w*/qemu-w*-setup-$date.exe; do
-    (cd $(dirname $exe); x=$(basename $exe); sha512sum $x >${x/exe/sha512})
-done
+  echo Calculate SHA-512 checksums...
+  cd $instdir
+  sha512sum qemu-w64-setup-$date.exe >qemu-w64-setup-$date.sha512
+  cd ..
+  ln -sv $year/qemu-w64-setup-$date.* .
+)
 
 echo Update documentation...
 cp -auv /home/stefan/src/qemu/repo.or.cz/qemu/ar7/bin/ndebug/x86_64-w64-mingw32/docs/manual/* /var/www/html/doc/latest/
