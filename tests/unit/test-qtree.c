@@ -202,6 +202,7 @@ static void test_tree_remove(void)
     gint i;
     gboolean removed;
 
+#pragma GCC diagnostic ignored "-Wcast-function-type"
     tree = q_tree_new_full((GCompareDataFunc)my_compare, NULL,
                            my_key_destroy,
                            my_value_destroy);
