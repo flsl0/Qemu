@@ -1,7 +1,7 @@
 /*
  * QEMU AR7 support
  *
- * Copyright (C) 2006-2019 Stefan Weil
+ * Copyright (C) 2006-2023 Stefan Weil
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -433,7 +433,7 @@ static const char *mips_backtrace(void)
     static char buffer[256];
     char *p = buffer;
     if (first_cpu != 0) {
-      CPUArchState *env = first_cpu->env_ptr;
+      CPUArchState *env = cpu_env(first_cpu);
       p += sprintf(p, "[%s]", lookup_symbol(env->active_tc.PC));
       p += sprintf(p, "[%s]", lookup_symbol(env->active_tc.gpr[31]));
     } else {
@@ -658,7 +658,7 @@ static void ar7_update_interrupt(void)
 {
     static int intset;
 
-    CPUMIPSState *env = first_cpu->env_ptr;
+    CPUMIPSState *env = cpu_env(first_cpu);
     uint32_t masked_int1;
     uint32_t masked_int2;
 
@@ -714,7 +714,7 @@ static void ar7_primary_irq(void *opaque, int channel, int level)
     TRACE(INTC && (irq_num != INTERRUPT_SERIAL0 || UART),
           logout("(%p,%d,%d)", opaque, irq_num, level));
     if (level) {
-        assert(env == first_cpu->env_ptr);
+        assert(env == cpu_env(first_cpu));
         uint32_t intmask = reg_read(av.intc, INTC_ESR1 + 4 * cindex);
         if (intmask & BIT(offset)) {
             TRACE(INTC && (irq_num != 15 || UART),

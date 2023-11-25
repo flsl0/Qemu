@@ -1306,11 +1306,11 @@ static int qemu_target_backtrace(target_ulong *array, size_t size)
     int n = 0;
     if (size >= 2) {
 #if defined(TARGET_ARM)
-        CPUArchState *env = current_cpu->env_ptr;
+        CPUArchState *env = cpu_env(current_cpu);
         array[0] = env->regs[15];
         array[1] = env->regs[14];
 #elif defined(TARGET_MIPS)
-        CPUArchState *env = current_cpu->env_ptr;
+        CPUArchState *env = cpu_env(current_cpu);
         array[0] = env->active_tc.PC;
         array[1] = env->active_tc.gpr[31];
 #else
