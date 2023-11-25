@@ -495,6 +495,15 @@ bool qemu_has_ufo(NetClientState *nc)
     return nc->info->has_ufo(nc);
 }
 
+bool qemu_has_uso(NetClientState *nc)
+{
+    if (!nc || !nc->info->has_uso) {
+        return false;
+    }
+
+    return nc->info->has_uso(nc);
+}
+
 bool qemu_has_vnet_hdr(NetClientState *nc)
 {
     if (!nc || !nc->info->has_vnet_hdr) {
@@ -532,13 +541,13 @@ void qemu_using_vnet_hdr(NetClientState *nc, bool enable)
 }
 
 void qemu_set_offload(NetClientState *nc, int csum, int tso4, int tso6,
-                          int ecn, int ufo)
+                          int ecn, int ufo, int uso4, int uso6)
 {
     if (!nc || !nc->info->set_offload) {
         return;
     }
 
-    nc->info->set_offload(nc, csum, tso4, tso6, ecn, ufo);
+    nc->info->set_offload(nc, csum, tso4, tso6, ecn, ufo, uso4, uso6);
 }
 
 int qemu_get_vnet_hdr_len(NetClientState *nc)
@@ -1082,6 +1091,9 @@ static int (* const net_client_init_fun[NET_CLIENT_DRIVER__MAX])(
 #ifdef CONFIG_NETMAP
         [NET_CLIENT_DRIVER_NETMAP]    = net_init_netmap,
 #endif
+#ifdef CONFIG_AF_XDP
+        [NET_CLIENT_DRIVER_AF_XDP]    = net_init_af_xdp,
+#endif
 #ifdef CONFIG_NET_BRIDGE
         [NET_CLIENT_DRIVER_BRIDGE]    = net_init_bridge,
 #endif
@@ -1185,6 +1197,9 @@ void show_netdevs(void)
 #endif
 #ifdef CONFIG_NETMAP
         "netmap",
+#endif
+#ifdef CONFIG_AF_XDP
+        "af-xdp",
 #endif
 #ifdef CONFIG_POSIX
         "vhost-user",
@@ -1662,7 +1677,7 @@ void net_init_clients(void)
  * Modern syntax is to be parsed with netdev_parse_modern().
  * Traditional syntax is to be parsed with net_client_parse().
  */
-bool netdev_is_modern(const char *optarg)
+bool netdev_is_modern(const char *optstr)
 {
     QemuOpts *opts;
     bool is_modern;
@@ -1674,13 +1689,13 @@ bool netdev_is_modern(const char *optarg)
         .desc = { { } },
     };
 
-    if (optarg[0] == '{') {
+    if (optstr[0] == '{') {
         /* This is JSON, which means it's modern syntax */
         return true;
     }
 
     opts = qemu_opts_create(&dummy_opts, NULL, false, &error_abort);
-    qemu_opts_do_parse(opts, optarg, dummy_opts.implied_opt_name,
+    qemu_opts_do_parse(opts, optstr, dummy_opts.implied_opt_name,
                        &error_abort);
     type = qemu_opt_get(opts, "type");
     is_modern = !g_strcmp0(type, "stream") || !g_strcmp0(type, "dgram");
@@ -1696,12 +1711,12 @@ bool netdev_is_modern(const char *optarg)
  * netdev_parse_modern() appends to @nd_queue, whereas net_client_parse()
  * appends to @qemu_netdev_opts.
  */
-void netdev_parse_modern(const char *optarg)
+void netdev_parse_modern(const char *optstr)
 {
     Visitor *v;
     NetdevQueueEntry *nd;
 
-    v = qobject_input_visitor_new_str(optarg, "type", &error_fatal);
+    v = qobject_input_visitor_new_str(optstr, "type", &error_fatal);
     nd = g_new(NetdevQueueEntry, 1);
     visit_type_Netdev(v, NULL, &nd->nd, &error_fatal);
     visit_free(v);
@@ -1710,9 +1725,9 @@ void netdev_parse_modern(const char *optarg)
     QSIMPLEQ_INSERT_TAIL(&nd_queue, nd, entry);
 }
 
-void net_client_parse(QemuOptsList *opts_list, const char *optarg)
+void net_client_parse(QemuOptsList *opts_list, const char *optstr)
 {
-    if (!qemu_opts_parse_noisily(opts_list, optarg, true)) {
+    if (!qemu_opts_parse_noisily(opts_list, optstr, true)) {
         exit(1);
     }
 }

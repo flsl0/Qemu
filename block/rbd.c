@@ -1169,7 +1169,9 @@ static int qemu_rbd_open(BlockDriverState *bs, QDict *options, int flags,
     /* If we are using an rbd snapshot, we must be r/o, otherwise
      * leave as-is */
     if (s->snap != NULL) {
+        bdrv_graph_rdlock_main_loop();
         r = bdrv_apply_auto_read_only(bs, "rbd snapshots are read-only", errp);
+        bdrv_graph_rdunlock_main_loop();
         if (r < 0) {
             goto failed_post_open;
         }
@@ -1208,6 +1210,8 @@ static int qemu_rbd_reopen_prepare(BDRVReopenState *state,
 {
     BDRVRBDState *s = state->bs->opaque;
     int ret = 0;
+
+    GRAPH_RDLOCK_GUARD_MAINLOOP();
 
     if (s->snap && state->flags & BDRV_O_RDWR) {
         error_setg(errp,
@@ -1291,7 +1295,7 @@ static int coroutine_fn qemu_rbd_start_co(BlockDriverState *bs,
          * operations that exceed the current size.
          */
         if (offset + bytes > s->image_size) {
-            int r = qemu_rbd_resize(bs, offset + bytes);
+            r = qemu_rbd_resize(bs, offset + bytes);
             if (r < 0) {
                 return r;
             }

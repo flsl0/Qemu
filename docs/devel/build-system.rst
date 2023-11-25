@@ -225,14 +225,14 @@ Target-dependent emulator sourcesets:
   The sourceset is only used for system emulators.
 
   Each subdirectory in ``target/`` instead should add one sourceset to each
-  of the ``target_arch`` and ``target_softmmu_arch``, which are used respectively
+  of the ``target_arch`` and ``target_system_arch``, which are used respectively
   for all emulators and for system emulators only.  For example::
 
     arm_ss = ss.source_set()
     arm_system_ss = ss.source_set()
     ...
     target_arch += {'arm': arm_ss}
-    target_softmmu_arch += {'arm': arm_system_ss}
+    target_system_arch += {'arm': arm_system_ss}
 
 Module sourcesets:
   There are two dictionaries for modules: ``modules`` is used for
@@ -460,16 +460,12 @@ Built by configure:
 
 ``config-host.mak``
   When configure has determined the characteristics of the build host it
-  will write them to this file for use in ``Makefile`` and to a smaller
-  extent ``meson.build``. These include the paths to various tools and a
-  variety of ``CONFIG_*`` variables related to optionally enabled features.
+  will write the paths to various tools to this file, for use in ``Makefile``
+  and to a smaller extent ``meson.build``.
 
   ``config-host.mak`` is also used as a dependency checking mechanism. If make
   sees that the modification timestamp on configure is newer than that on
   ``config-host.mak``, then configure will be re-run.
-
-  The variables defined here apply to all QEMU
-  build outputs.
 
 ``config-meson.cross``
 
