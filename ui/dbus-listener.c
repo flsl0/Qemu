@@ -616,6 +616,7 @@ static void dbus_gfx_update_sub(DBusDisplayListener *ddl,
         }
     }
 #endif
+#pragma GCC diagnostic ignored "-Wcast-function-type"
     v_data = g_variant_new_from_data(
         G_VARIANT_TYPE("ay"),
         pixman_image_get_data(img),
@@ -652,6 +653,7 @@ static void dbus_gfx_update(DisplayChangeListener *dcl,
 #endif
 
     if (x == 0 && y == 0 && w == surface_width(ddl->ds) && h == surface_height(ddl->ds)) {
+#pragma GCC diagnostic ignored "-Wcast-function-type"
         v_data = g_variant_new_from_data(
             G_VARIANT_TYPE("ay"),
             surface_data(ddl->ds),
