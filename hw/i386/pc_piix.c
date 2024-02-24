@@ -36,7 +36,6 @@
 #include "hw/rtc/mc146818rtc.h"
 #include "hw/southbridge/piix.h"
 #include "hw/display/ramfb.h"
-#include "hw/firmware/smbios.h"
 #include "hw/pci/pci.h"
 #include "hw/pci/pci_ids.h"
 #include "hw/usb.h"
@@ -68,7 +67,6 @@
 #include "kvm/kvm-cpu.h"
 #include "target/i386/cpu.h"
 
-#define MAX_IDE_BUS 2
 #define XEN_IOAPIC_NUM_PIRQS 128ULL
 
 #ifdef CONFIG_IDE_ISA
@@ -92,13 +90,10 @@ static void piix_intx_routing_notifier_xen(PCIDevice *dev)
 {
     int i;
 
-    /* Scan for updates to PCI link routes (0x60-0x63). */
+    /* Scan for updates to PCI link routes. */
     for (i = 0; i < PIIX_NUM_PIRQS; i++) {
-        uint8_t v = dev->config_read(dev, PIIX_PIRQCA + i, 1);
-        if (v & 0x80) {
-            v = 0;
-        }
-        v &= 0xf;
+        const PCIINTxRoute route = pci_device_route_intx_to_irq(dev, i);
+        const uint8_t v = route.mode == PCI_INTX_ENABLED ? route.irq : 0;
         xen_set_pci_link_route(i, v);
     }
 }
@@ -117,7 +112,6 @@ static void pc_init1(MachineState *machine,
     Object *piix4_pm = NULL;
     qemu_irq smi_irq;
     GSIState *gsi_state;
-    BusState *idebus[MAX_IDE_BUS];
     ISADevice *rtc_state;
     MemoryRegion *ram_memory;
     MemoryRegion *pci_memory = NULL;
@@ -230,17 +224,6 @@ static void pc_init1(MachineState *machine,
                                                &error_abort);
     }
 
-    pc_guest_info_init(pcms);
-
-    if (pcmc->smbios_defaults) {
-        MachineClass *mc = MACHINE_GET_CLASS(machine);
-        /* These values are guest ABI, do not change */
-        smbios_set_defaults("QEMU", mc->desc,
-                            mc->name, pcmc->smbios_legacy_mode,
-                            pcmc->smbios_uuid_encoded,
-                            pcms->smbios_entry_point_type);
-    }
-
     /* allocate ram and load rom/bios */
     if (!xen_enabled()) {
         pc_memory_init(pcms, system_memory, rom_memory, hole64_size);
@@ -248,7 +231,6 @@ static void pc_init1(MachineState *machine,
         assert(machine->ram_size == x86ms->below_4g_mem_size +
                                     x86ms->above_4g_mem_size);
 
-        pc_system_flash_cleanup_unused(pcms);
         if (machine->kernel_filename != NULL) {
             /* For xen HVM direct kernel boot, load linux here */
             xen_load_linux(pcms);
@@ -302,8 +284,8 @@ static void pc_init1(MachineState *machine,
         piix4_pm = object_resolve_path_component(OBJECT(pci_dev), "pm");
         dev = DEVICE(object_resolve_path_component(OBJECT(pci_dev), "ide"));
         pci_ide_create_devs(PCI_DEVICE(dev));
-        idebus[0] = qdev_get_child_bus(dev, "ide.0");
-        idebus[1] = qdev_get_child_bus(dev, "ide.1");
+        pcms->idebus[0] = qdev_get_child_bus(dev, "ide.0");
+        pcms->idebus[1] = qdev_get_child_bus(dev, "ide.1");
     } else {
         isa_bus = isa_bus_new(NULL, system_memory, system_io,
                               &error_abort);
@@ -313,10 +295,8 @@ static void pc_init1(MachineState *machine,
         qdev_prop_set_int32(DEVICE(rtc_state), "base_year", 2000);
         isa_realize_and_unref(rtc_state, isa_bus, &error_fatal);
 
-        i8257_dma_init(isa_bus, 0);
+        i8257_dma_init(OBJECT(machine), isa_bus, 0);
         pcms->hpet_enabled = false;
-        idebus[0] = NULL;
-        idebus[1] = NULL;
     }
 
     if (x86ms->pic == ON_OFF_AUTO_ON || x86ms->pic == ON_OFF_AUTO_AUTO) {
@@ -342,13 +322,10 @@ static void pc_init1(MachineState *machine,
     pc_basic_device_init(pcms, isa_bus, x86ms->gsi, rtc_state, true,
                          0x4);
 
-    pc_nic_init(pcmc, isa_bus, pci_bus, pcms->xenbus);
+    pc_nic_init(pcmc, isa_bus, pci_bus);
 
-    if (pcmc->pci_enabled) {
-        pc_cmos_init(pcms, idebus[0], idebus[1], rtc_state);
-    }
 #ifdef CONFIG_IDE_ISA
-    else {
+    if (!pcmc->pci_enabled) {
         DriveInfo *hd[MAX_IDE_BUS * MAX_IDE_DEVS];
         int i;
 
@@ -364,11 +341,12 @@ static void pc_init1(MachineState *machine,
              * second one.
              */
             busname[4] = '0' + i;
-            idebus[i] = qdev_get_child_bus(DEVICE(dev), busname);
+            pcms->idebus[i] = qdev_get_child_bus(DEVICE(dev), busname);
         }
-        pc_cmos_init(pcms, idebus[0], idebus[1], rtc_state);
     }
 #endif
+
+    pc_cmos_init(pcms, rtc_state);
 
     if (piix4_pm) {
         smi_irq = qemu_allocate_irq(pc_acpi_smi_interrupt, first_cpu, 0);
@@ -545,11 +523,24 @@ static void pc_i440fx_machine_options(MachineClass *m)
                                      "Use a different south bridge than PIIX3");
 }
 
-static void pc_i440fx_8_2_machine_options(MachineClass *m)
+static void pc_i440fx_9_0_machine_options(MachineClass *m)
 {
     pc_i440fx_machine_options(m);
     m->alias = "pc";
     m->is_default = true;
+}
+
+DEFINE_I440FX_MACHINE(v9_0, "pc-i440fx-9.0", NULL,
+                      pc_i440fx_9_0_machine_options);
+
+static void pc_i440fx_8_2_machine_options(MachineClass *m)
+{
+    pc_i440fx_9_0_machine_options(m);
+    m->alias = NULL;
+    m->is_default = false;
+
+    compat_props_add(m->compat_props, hw_compat_8_2, hw_compat_8_2_len);
+    compat_props_add(m->compat_props, pc_compat_8_2, pc_compat_8_2_len);
 }
 
 DEFINE_I440FX_MACHINE(v8_2, "pc-i440fx-8.2", NULL,
@@ -560,8 +551,6 @@ static void pc_i440fx_8_1_machine_options(MachineClass *m)
     PCMachineClass *pcmc = PC_MACHINE_CLASS(m);
 
     pc_i440fx_8_2_machine_options(m);
-    m->alias = NULL;
-    m->is_default = false;
     pcmc->broken_32bit_mem_addr_check = true;
 
     compat_props_add(m->compat_props, hw_compat_8_1, hw_compat_8_1_len);

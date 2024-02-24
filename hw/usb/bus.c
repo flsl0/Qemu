@@ -69,7 +69,7 @@ const VMStateDescription vmstate_usb_device = {
     .version_id = 1,
     .minimum_version_id = 1,
     .post_load = usb_device_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(addr, USBDevice),
         VMSTATE_INT32(state, USBDevice),
         VMSTATE_INT32(remote_wakeup, USBDevice),
@@ -327,29 +327,6 @@ void usb_legacy_register(const char *typename, const char *usbdevice_name,
         f->usbdevice_init = usbdevice_init;
         legacy_usb_factory = g_slist_append(legacy_usb_factory, f);
     }
-}
-
-USBDevice *usb_new(const char *name)
-{
-    return USB_DEVICE(qdev_new(name));
-}
-
-static USBDevice *usb_try_new(const char *name)
-{
-    return USB_DEVICE(qdev_try_new(name));
-}
-
-bool usb_realize_and_unref(USBDevice *dev, USBBus *bus, Error **errp)
-{
-    return qdev_realize_and_unref(&dev->qdev, &bus->qbus, errp);
-}
-
-USBDevice *usb_create_simple(USBBus *bus, const char *name)
-{
-    USBDevice *dev = usb_new(name);
-
-    usb_realize_and_unref(dev, bus, &error_abort);
-    return dev;
 }
 
 static void usb_fill_port(USBPort *port, void *opaque, int index,

@@ -50,6 +50,11 @@ static bool avr_cpu_has_work(CPUState *cs)
             && cpu_interrupts_enabled(env);
 }
 
+static int avr_cpu_mmu_index(CPUState *cs, bool ifetch)
+{
+    return ifetch ? MMU_CODE_IDX : MMU_DATA_IDX;
+}
+
 static void avr_cpu_synchronize_from_tb(CPUState *cs,
                                         const TranslationBlock *tb)
 {
@@ -160,13 +165,7 @@ static Property avr_cpu_properties[] = {
 
 static ObjectClass *avr_cpu_class_by_name(const char *cpu_model)
 {
-    ObjectClass *oc;
-
-    oc = object_class_by_name(cpu_model);
-    if (object_class_dynamic_cast(oc, TYPE_AVR_CPU) == NULL) {
-        oc = NULL;
-    }
-    return oc;
+    return object_class_by_name(cpu_model);
 }
 
 static void avr_cpu_dump_state(CPUState *cs, FILE *f, int flags)
@@ -216,7 +215,7 @@ static const struct SysemuCPUOps avr_sysemu_ops = {
 
 #include "hw/core/tcg-cpu-ops.h"
 
-static const struct TCGCPUOps avr_tcg_ops = {
+static const TCGCPUOps avr_tcg_ops = {
     .initialize = avr_cpu_tcg_init,
     .synchronize_from_tb = avr_cpu_synchronize_from_tb,
     .restore_state_to_opc = avr_restore_state_to_opc,
@@ -242,6 +241,7 @@ static void avr_cpu_class_init(ObjectClass *oc, void *data)
     cc->class_by_name = avr_cpu_class_by_name;
 
     cc->has_work = avr_cpu_has_work;
+    cc->mmu_index = avr_cpu_mmu_index;
     cc->dump_state = avr_cpu_dump_state;
     cc->set_pc = avr_cpu_set_pc;
     cc->get_pc = avr_cpu_get_pc;
@@ -367,21 +367,6 @@ typedef struct AVRCPUInfo {
     void (*initfn)(Object *obj);
 } AVRCPUInfo;
 
-
-static void avr_cpu_list_entry(gpointer data, gpointer user_data)
-{
-    const char *typename = object_class_get_name(OBJECT_CLASS(data));
-
-    qemu_printf("%s\n", typename);
-}
-
-void avr_cpu_list(void)
-{
-    GSList *list;
-    list = object_class_get_list_sorted(TYPE_AVR_CPU, false);
-    g_slist_foreach(list, avr_cpu_list_entry, NULL);
-    g_slist_free(list);
-}
 
 #define DEFINE_AVR_CPU_TYPE(model, initfn) \
     { \

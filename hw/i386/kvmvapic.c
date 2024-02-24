@@ -16,6 +16,7 @@
 #include "sysemu/hw_accel.h"
 #include "sysemu/kvm.h"
 #include "sysemu/runstate.h"
+#include "exec/address-spaces.h"
 #include "hw/i386/apic_internal.h"
 #include "hw/sysbus.h"
 #include "hw/boards.h"
@@ -727,7 +728,7 @@ static void vapic_realize(DeviceState *dev, Error **errp)
     VAPICROMState *s = VAPIC(dev);
 
     memory_region_init_io(&s->io, OBJECT(s), &vapic_ops, s, "kvmvapic", 2);
-    sysbus_add_io(sbd, VAPIC_IO_PORT, &s->io);
+    memory_region_add_subregion(get_system_io(), VAPIC_IO_PORT, &s->io);
     sysbus_init_ioports(sbd, VAPIC_IO_PORT, 2);
 
     option_rom[nb_option_roms].name = "kvmvapic.bin";
@@ -802,7 +803,7 @@ static const VMStateDescription vmstate_handlers = {
     .name = "kvmvapic-handlers",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(set_tpr, VAPICHandlers),
         VMSTATE_UINT32(set_tpr_eax, VAPICHandlers),
         VMSTATE_UINT32_ARRAY(get_tpr, VAPICHandlers, 8),
@@ -815,7 +816,7 @@ static const VMStateDescription vmstate_guest_rom = {
     .name = "kvmvapic-guest-rom",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UNUSED(8),     /* signature */
         VMSTATE_UINT32(vaddr, GuestROMState),
         VMSTATE_UINT32(fixup_start, GuestROMState),
@@ -835,7 +836,7 @@ static const VMStateDescription vmstate_vapic = {
     .version_id = 1,
     .minimum_version_id = 1,
     .post_load = vapic_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_STRUCT(rom_state, VAPICROMState, 0, vmstate_guest_rom,
                        GuestROMState),
         VMSTATE_UINT32(state, VAPICROMState),

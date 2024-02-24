@@ -1312,6 +1312,10 @@ static bool is_prefix_insn_excp(PowerPCCPU *cpu, int excp)
 {
     CPUPPCState *env = &cpu->env;
 
+    if (!(env->insns_flags2 & PPC2_ISA310)) {
+        return false;
+    }
+
     if (!tcg_enabled()) {
         /*
          * This does not load instructions and set the prefix bit correctly
@@ -1322,6 +1326,15 @@ static bool is_prefix_insn_excp(PowerPCCPU *cpu, int excp)
     }
 
     switch (excp) {
+    case POWERPC_EXCP_MCHECK:
+        if (!(env->error_code & PPC_BIT(42))) {
+            /*
+             * Fetch attempt caused a machine check, so attempting to fetch
+             * again would cause a recursive machine check.
+             */
+            return false;
+        }
+        break;
     case POWERPC_EXCP_HDSI:
         /* HDSI PRTABLE_FAULT has the originating access type in error_code */
         if ((env->spr[SPR_HDSISR] & DSISR_PRTABLE_FAULT) &&
@@ -1332,10 +1345,10 @@ static bool is_prefix_insn_excp(PowerPCCPU *cpu, int excp)
              * instruction at NIP would cause recursive faults with the same
              * translation).
              */
-            break;
+            return false;
         }
-        /* fall through */
-    case POWERPC_EXCP_MCHECK:
+        break;
+
     case POWERPC_EXCP_DSI:
     case POWERPC_EXCP_DSEG:
     case POWERPC_EXCP_ALIGN:
@@ -1346,17 +1359,13 @@ static bool is_prefix_insn_excp(PowerPCCPU *cpu, int excp)
     case POWERPC_EXCP_VPU:
     case POWERPC_EXCP_VSXU:
     case POWERPC_EXCP_FU:
-    case POWERPC_EXCP_HV_FU: {
-        uint32_t insn = ppc_ldl_code(env, env->nip);
-        if (is_prefix_insn(env, insn)) {
-            return true;
-        }
+    case POWERPC_EXCP_HV_FU:
         break;
-    }
     default:
-        break;
+        return false;
     }
-    return false;
+
+    return is_prefix_insn(env, ppc_ldl_code(env, env->nip));
 }
 #else
 static bool is_prefix_insn_excp(PowerPCCPU *cpu, int excp)
@@ -2222,7 +2231,7 @@ static int ppc_next_unmasked_interrupt(CPUPPCState *env)
 void ppc_maybe_interrupt(CPUPPCState *env)
 {
     CPUState *cs = env_cpu(env);
-    QEMU_IOTHREAD_LOCK_GUARD();
+    BQL_LOCK_GUARD();
 
     if (ppc_next_unmasked_interrupt(env)) {
         cpu_interrupt(cs, CPU_INTERRUPT_HARD);
@@ -3056,7 +3065,7 @@ void helper_msgsnd(target_ulong rb)
         return;
     }
 
-    qemu_mutex_lock_iothread();
+    bql_lock();
     CPU_FOREACH(cs) {
         PowerPCCPU *cpu = POWERPC_CPU(cs);
         CPUPPCState *cenv = &cpu->env;
@@ -3065,7 +3074,7 @@ void helper_msgsnd(target_ulong rb)
             ppc_set_irq(cpu, irq, 1);
         }
     }
-    qemu_mutex_unlock_iothread();
+    bql_unlock();
 }
 
 /* Server Processor Control */
@@ -3093,7 +3102,7 @@ static void book3s_msgsnd_common(int pir, int irq)
 {
     CPUState *cs;
 
-    qemu_mutex_lock_iothread();
+    bql_lock();
     CPU_FOREACH(cs) {
         PowerPCCPU *cpu = POWERPC_CPU(cs);
         CPUPPCState *cenv = &cpu->env;
@@ -3103,7 +3112,7 @@ static void book3s_msgsnd_common(int pir, int irq)
             ppc_set_irq(cpu, irq, 1);
         }
     }
-    qemu_mutex_unlock_iothread();
+    bql_unlock();
 }
 
 void helper_book3s_msgsnd(target_ulong rb)
@@ -3157,14 +3166,14 @@ void helper_book3s_msgsndp(CPUPPCState *env, target_ulong rb)
     }
 
     /* Does iothread need to be locked for walking CPU list? */
-    qemu_mutex_lock_iothread();
+    bql_lock();
     THREAD_SIBLING_FOREACH(cs, ccs) {
         PowerPCCPU *ccpu = POWERPC_CPU(ccs);
         uint32_t thread_id = ppc_cpu_tir(ccpu);
 
         if (ttir == thread_id) {
             ppc_set_irq(ccpu, PPC_INTERRUPT_DOORBELL, 1);
-            qemu_mutex_unlock_iothread();
+            bql_unlock();
             return;
         }
     }
@@ -3224,6 +3233,7 @@ void ppc_cpu_do_transaction_failed(CPUState *cs, hwaddr physaddr,
 
     switch (env->excp_model) {
 #if defined(TARGET_PPC64)
+    case POWERPC_EXCP_POWER8:
     case POWERPC_EXCP_POWER9:
     case POWERPC_EXCP_POWER10:
         /*
@@ -3245,6 +3255,10 @@ void ppc_cpu_do_transaction_failed(CPUState *cs, hwaddr physaddr,
             env->error_code |= PPC_BIT(42);
 
         } else { /* Fetch */
+            /*
+             * is_prefix_insn_excp() tests !PPC_BIT(42) to avoid fetching
+             * the instruction, so that must always be clear for fetches.
+             */
             env->error_code = PPC_BIT(36) | PPC_BIT(44) | PPC_BIT(45);
         }
         break;
