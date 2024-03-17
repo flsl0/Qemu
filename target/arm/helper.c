@@ -10319,7 +10319,7 @@ void modify_arm_cp_regs_with_len(ARMCPRegInfo *regs, size_t regs_len,
         for (size_t ri = 0; ri < regs_len; ++ri) {
             ARMCPRegInfo *r = regs + ri;
 
-            if (pat && g_pattern_match_string(pat, r->name)) {
+            if (pat && g_pattern_spec_match_string(pat, r->name)) {
                 r->type = ARM_CP_CONST;
                 r->access = PL0U_R;
                 r->resetvalue = 0;
