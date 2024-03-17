@@ -489,6 +489,21 @@ The ``-singlestep`` option has been turned into an accelerator property,
 and given a name that better reflects what it actually does.
 Use ``-accel tcg,one-insn-per-tb=on`` instead.
 
+``-smp`` ("parameter=0" SMP configurations) (removed in 9.0)
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+Specified CPU topology parameters must be greater than zero.
+
+In the SMP configuration, users should either provide a CPU topology
+parameter with a reasonable value (greater than zero) or just omit it
+and QEMU will compute the missing value.
+
+However, historically it was implicitly allowed for users to provide
+a parameter with zero value, which is meaningless and could also possibly
+cause unexpected results in the -smp parsing. So support for this kind of
+configurations (e.g. -smp 8,sockets=0) is removed since 9.0, users have
+to ensure that all the topology members described with -smp are greater
+than zero.
 
 User-mode emulator command line arguments
 -----------------------------------------
@@ -658,6 +673,21 @@ This command didn't produce any output already. Removed with no replacement.
 
 The ``singlestep`` command has been replaced by the ``one-insn-per-tb``
 command, which has the same behaviour but a less misleading name.
+
+Host Architectures
+------------------
+
+System emulation on 32-bit Windows hosts (removed in 9.0)
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+Windows 11 has no support for 32-bit host installs, and Windows 10 did
+not support new 32-bit installs, only upgrades. 32-bit Windows support
+has now been dropped by the MSYS2 project. QEMU also is deprecating
+and dropping support for 32-bit x86 host deployments in
+general. 32-bit Windows is therefore no longer a supported host for
+QEMU.  Since all recent x86 hardware from the past >10 years is
+capable of the 64-bit x86 extensions, a corresponding 64-bit OS should
+be used instead.
 
 Guest Emulator ISAs
 -------------------

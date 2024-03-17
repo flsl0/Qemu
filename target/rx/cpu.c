@@ -71,9 +71,9 @@ static int riscv_cpu_mmu_index(CPUState *cs, bool ifunc)
 
 static void rx_cpu_reset_hold(Object *obj)
 {
-    RXCPU *cpu = RX_CPU(obj);
-    RXCPUClass *rcc = RX_CPU_GET_CLASS(cpu);
-    CPURXState *env = &cpu->env;
+    CPUState *cs = CPU(obj);
+    RXCPUClass *rcc = RX_CPU_GET_CLASS(obj);
+    CPURXState *env = cpu_env(cs);
     uint32_t *resetvec;
 
     if (rcc->parent_phases.hold) {
@@ -221,7 +221,6 @@ static void rx_cpu_class_init(ObjectClass *klass, void *data)
     cc->gdb_write_register = rx_cpu_gdb_write_register;
     cc->disas_set_info = rx_cpu_disas_set_info;
 
-    cc->gdb_num_core_regs = 26;
     cc->gdb_core_xml_file = "rx-core.xml";
     cc->tcg_ops = &rx_tcg_ops;
 }

@@ -6412,6 +6412,10 @@ void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
             break;
         }
 
+        /*
+         * If these are changed, they should stay in sync with
+         * x86_cpu_filter_features().
+         */
         if (count == 0) {
             *eax = INTEL_PT_MAX_SUBLEAF;
             *ebx = INTEL_PT_MINIMAL_EBX;
@@ -6691,9 +6695,9 @@ static void x86_cpu_set_sgxlepubkeyhash(CPUX86State *env)
 
 static void x86_cpu_reset_hold(Object *obj)
 {
-    CPUState *s = CPU(obj);
-    X86CPU *cpu = X86_CPU(s);
-    X86CPUClass *xcc = X86_CPU_GET_CLASS(cpu);
+    CPUState *cs = CPU(obj);
+    X86CPU *cpu = X86_CPU(cs);
+    X86CPUClass *xcc = X86_CPU_GET_CLASS(obj);
     CPUX86State *env = &cpu->env;
     target_ulong cr4;
     uint64_t xcr0;
@@ -6781,8 +6785,8 @@ static void x86_cpu_reset_hold(Object *obj)
     memset(env->dr, 0, sizeof(env->dr));
     env->dr[6] = DR6_FIXED_1;
     env->dr[7] = DR7_FIXED_1;
-    cpu_breakpoint_remove_all(s, BP_CPU);
-    cpu_watchpoint_remove_all(s, BP_CPU);
+    cpu_breakpoint_remove_all(cs, BP_CPU);
+    cpu_watchpoint_remove_all(cs, BP_CPU);
 
     cr4 = 0;
     xcr0 = XSTATE_FP_MASK;
@@ -6833,9 +6837,9 @@ static void x86_cpu_reset_hold(Object *obj)
     env->triple_fault_pending = false;
 #if !defined(CONFIG_USER_ONLY)
     /* We hard-wire the BSP to the first CPU. */
-    apic_designate_bsp(cpu->apic_state, s->cpu_index == 0);
+    apic_designate_bsp(cpu->apic_state, cs->cpu_index == 0);
 
-    s->halted = !cpu_is_bsp(cpu);
+    cs->halted = !cpu_is_bsp(cpu);
 
     if (kvm_enabled()) {
         kvm_arch_reset_vcpu(cpu);
@@ -7156,7 +7160,12 @@ static void x86_cpu_filter_features(X86CPU *cpu, bool verbose)
         mark_unavailable_features(cpu, w, unavailable_features, prefix);
     }
 
-    if (env->features[FEAT_7_0_EBX] & CPUID_7_0_EBX_INTEL_PT) {
+    /*
+     * Check that KVM actually allows the processor tracing features that
+     * are advertised by cpu_x86_cpuid().  Keep these two in sync.
+     */
+    if ((env->features[FEAT_7_0_EBX] & CPUID_7_0_EBX_INTEL_PT) &&
+        kvm_enabled()) {
         uint32_t eax_0, ebx_0, ecx_0, edx_0_unused;
         uint32_t eax_1, ebx_1, ecx_1_unused, edx_1_unused;
 
@@ -7726,10 +7735,13 @@ static bool x86_cpu_has_work(CPUState *cs)
 static int x86_cpu_mmu_index(CPUState *cs, bool ifetch)
 {
     CPUX86State *env = cpu_env(cs);
+    int mmu_index_32 = (env->hflags & HF_CS64_MASK) ? 1 : 0;
+    int mmu_index_base =
+        (env->hflags & HF_CPL_MASK) == 3 ? MMU_USER64_IDX :
+        !(env->hflags & HF_SMAP_MASK) ? MMU_KNOSMAP64_IDX :
+        (env->eflags & AC_MASK) ? MMU_KNOSMAP64_IDX : MMU_KSMAP64_IDX;
 
-    return (env->hflags & HF_CPL_MASK) == 3 ? MMU_USER_IDX :
-        (!(env->hflags & HF_SMAP_MASK) || (env->eflags & AC_MASK))
-        ? MMU_KNOSMAP_IDX : MMU_KSMAP_IDX;
+    return mmu_index_base + mmu_index_32;
 }
 
 static void x86_disas_set_info(CPUState *cs, disassemble_info *info)
@@ -7981,10 +7993,8 @@ static void x86_cpu_common_class_init(ObjectClass *oc, void *data)
     cc->gdb_arch_name = x86_gdb_arch_name;
 #ifdef TARGET_X86_64
     cc->gdb_core_xml_file = "i386-64bit.xml";
-    cc->gdb_num_core_regs = 66;
 #else
     cc->gdb_core_xml_file = "i386-32bit.xml";
-    cc->gdb_num_core_regs = 50;
 #endif
     cc->disas_set_info = x86_disas_set_info;
 

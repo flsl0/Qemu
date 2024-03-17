@@ -973,7 +973,7 @@ commands and events), member (for structs and unions), branch (for
 alternates), or value (for enums), a description of each feature (if
 any), and finally optional tagged sections.
 
-Descriptions start with '\@name:'.  The description text should be
+Descriptions start with '\@name:'.  The description text must be
 indented like this::
 
  # @name: Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed
@@ -986,25 +986,30 @@ indented like this::
 Extensions added after the definition was first released carry a
 "(since x.y.z)" comment.
 
-The feature descriptions must be preceded by a line "Features:", like
-this::
+The feature descriptions must be preceded by a blank line and then a
+line "Features:", like this::
 
+  #
   # Features:
   #
   # @feature: Description text
 
-A tagged section starts with one of the following words:
-"Note:"/"Notes:", "Since:", "Example:"/"Examples:", "Returns:",
-"TODO:".  The section ends with the start of a new section.
+A tagged section begins with a paragraph that starts with one of the
+following words: "Note:"/"Notes:", "Since:", "Example:"/"Examples:",
+"Returns:", "Errors:", "TODO:".  It ends with the start of a new
+section.
 
-The second and subsequent lines of sections other than
-"Example"/"Examples" should be indented like this::
+The second and subsequent lines of tagged sections must be indented
+like this::
 
  # Note: Ut enim ad minim veniam, quis nostrud exercitation ullamco
  #     laboris nisi ut aliquip ex ea commodo consequat.
  #
  #     Duis aute irure dolor in reprehenderit in voluptate velit esse
  #     cillum dolore eu fugiat nulla pariatur.
+
+"Returns" and "Errors" sections are only valid for commands.  They
+document the success and the error response, respectively.
 
 A "Since: x.y.z" tagged section lists the release that introduced the
 definition.
@@ -1049,11 +1054,10 @@ For example::
  #
  # Example:
  #
- # -> { "execute": "query-blockstats" }
- # <- {
- #      ... lots of output ...
- #    }
- #
+ #     -> { "execute": "query-blockstats" }
+ #     <- {
+ #          ... lots of output ...
+ #        }
  ##
  { 'command': 'query-blockstats',
    'data': { '*query-nodes': 'bool' },
@@ -1087,8 +1091,10 @@ need to line up with each other, like this::
  #     or cache associativity unknown)
  #     (since 5.0)
 
-Section tags are case-sensitive and end with a colon.  Good example::
+Section tags are case-sensitive and end with a colon.  They are only
+recognized after a blank line.  Good example::
 
+ #
  # Since: 7.1
 
 Bad examples (all ordinary paragraphs)::
