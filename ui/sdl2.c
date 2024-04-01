@@ -295,9 +295,7 @@ static void sdl_mouse_mode_change(Notifier *notify, void *data)
             absolute_mouse_grab(&sdl2_console[0]);
         }
     } else if (absolute_enabled) {
-        if (!gui_fullscreen) {
-            sdl_grab_end(&sdl2_console[0]);
-        }
+        sdl_grab_end(&sdl2_console[0]);
         absolute_enabled = 0;
     }
 }
@@ -429,7 +427,7 @@ static void handle_keydown(SDL_Event *ev)
             gui_keysym = 1;
             if (!gui_grab) {
                 sdl_grab_start(scon);
-            } else if (!gui_fullscreen) {
+            } else {
                 sdl_grab_end(scon);
             }
             break;
@@ -510,7 +508,7 @@ static void handle_mousemotion(SDL_Event *ev)
         SDL_GetWindowSize(scon->real_window, &scr_w, &scr_h);
         max_x = scr_w - 1;
         max_y = scr_h - 1;
-        if (gui_grab && !gui_fullscreen
+        if (gui_grab
             && (ev->motion.x == 0 || ev->motion.y == 0 ||
                 ev->motion.x == max_x || ev->motion.y == max_y)) {
             sdl_grab_end(scon);
@@ -627,7 +625,7 @@ static void handle_windowevent(SDL_Event *ev)
         if (qemu_console_is_graphic(scon->dcl.con)) {
             win32_kbd_set_window(NULL);
         }
-        if (gui_grab && !gui_fullscreen) {
+        if (gui_grab) {
             sdl_grab_end(scon);
         }
         break;
