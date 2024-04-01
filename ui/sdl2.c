@@ -708,6 +708,9 @@ void sdl2_poll_events(struct sdl2_console *scon)
         case SDL_WINDOWEVENT:
             handle_windowevent(ev);
             break;
+        case SDL_CLIPBOARDUPDATE:
+            sdl2_clipboard_handle_request(scon);
+            break;
         default:
             break;
         }
@@ -929,6 +932,7 @@ static void sdl2_display_init(DisplayState *ds, DisplayOptions *o)
 #endif
         }
 #endif
+        sdl2_clipboard_init(&sdl2_console[i]);
     }
 
 #ifdef CONFIG_SDL_IMAGE
