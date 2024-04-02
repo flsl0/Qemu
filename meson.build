@@ -1409,7 +1409,7 @@ endif
 
 sdl = not_found
 if not get_option('sdl').auto() or have_system
-  sdl = dependency('sdl2', required: get_option('sdl'))
+  sdl = dependency('sdl3', required: get_option('sdl'))
   sdl_image = not_found
 endif
 if sdl.found()

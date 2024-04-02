@@ -27,7 +27,7 @@
 #include "sysemu/sysemu.h"
 
 #ifdef CONFIG_SDL
-#include <SDL.h>
+#include "SDL3/SDL.h"
 #endif
 
 int qemu_default_main(void)
