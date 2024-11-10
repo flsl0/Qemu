@@ -99,6 +99,8 @@ void sdl2_window_create(struct sdl2_console *scon)
     }
 #endif
 
+    flags |= SDL_WINDOW_ALLOW_HIGHDPI;
+
     scon->real_window = SDL_CreateWindow("", SDL_WINDOWPOS_UNDEFINED,
                                          SDL_WINDOWPOS_UNDEFINED,
                                          surface_width(scon->surface),
@@ -875,6 +877,7 @@ static void sdl2_display_init(DisplayState *ds, DisplayOptions *o)
     SDL_SetHint(SDL_HINT_ALLOW_ALT_TAB_WHILE_GRABBED, "0");
 #endif
     SDL_SetHint(SDL_HINT_WINDOWS_NO_CLOSE_ON_ALT_F4, "1");
+    SDL_SetHint(SDL_HINT_WINDOWS_DPI_SCALING, "1");
     memset(&info, 0, sizeof(info));
     SDL_VERSION(&info.version);
 
